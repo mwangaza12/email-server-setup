@@ -210,9 +210,9 @@ const emailTemplateAutoReply = (name) => `
 `;
 
 app.post("/send-email", async (req, res) => {
-  const { name, email, message, service } = req.body;
+  const { name, email, message } = req.body;
 
-  if (!name || !email || !message || !service) {
+  if (!name || !email || !message) {
     return res.status(400).json({ success:false,
       error: "Missing fields" });
   }
@@ -221,14 +221,14 @@ app.post("/send-email", async (req, res) => {
     // Notify you
     await transporter.sendMail({
       
-      to: process.env.MY_EMAIL,
-      subject: `New message for ${service}`,
-      html: emailTemplate({ name, email, message, service }),
+      to: process.env.EMAIL_USER,
+      subject: `New message from ${name}`,
+      html: emailTemplate({ name, email, message }),
     });
 
     // Auto reply
     await transporter.sendMail({
-      from: `"Joseph Mwangaza" <${process.env.MY_EMAIL}>`,
+      from: `"Joseph Mwangaza" <${process.env.EMAIL_USER}>`,
       to: email,
       subject: "Thanks for contacting me!",
       html: emailTemplateAutoReply(name),
