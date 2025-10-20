@@ -196,13 +196,13 @@ const emailTemplateAutoReply = (name) => `
             <div class="signature">
                 <p>Best regards,</p>
                 <p><strong>Joseph Mwangaza</strong></p>
-                <p>Software Developer</p>
+                <p>Software Engineer</p>
             </div>
         </div>
         
         <div class="email-footer">
             <p>This is an automated response. Please do not reply to this email.</p>
-            <p>© ${new Date().getFullYear()} Josseph Mwangaza. All rights reserved.</p>
+            <p>© ${new Date().getFullYear()} Joseph Mwangaza. All rights reserved.</p>
         </div>
     </div>
 </body>
