@@ -190,7 +190,7 @@ const emailTemplateAutoReply = (name) => `
             <div class="signature">
                 <p>Best regards,</p>
                 <p><strong>Joseph Mwangaza</strong></p>
-                <p>Software Engineer</p>
+                <p>Software Developer</p>
             </div>
         </div>
 
