@@ -1,6 +1,6 @@
 import express from "express";
 import cors from "cors";
-import nodemailer from "nodemailer";
+import { Resend } from "resend";
 import dotenv from "dotenv";
 
 dotenv.config();
@@ -10,18 +10,20 @@ app.use(cors());
 app.use(express.json());
 
 const PORT = process.env.PORT || 3000;
+const resend = new Resend(process.env.RESEND_API_KEY);
 
-// Email sender setup
-const transporter = nodemailer.createTransport({
-    service: "gmail",
-    auth: {
-        user: process.env.EMAIL_USER,
-        pass: process.env.EMAIL_PASS,
-    },
-});
+// Escape user input before putting it into HTML
+const escapeHtml = (s = "") =>
+  String(s).replace(/[&<>"']/g, (c) => ({
+    "&": "&amp;",
+    "<": "&lt;",
+    ">": "&gt;",
+    '"': "&quot;",
+    "'": "&#39;",
+  }[c]));
 
 // Email Template
-const emailTemplate = ({ name, email, message, service }) => `
+const emailTemplate = ({ name, email, message }) => `
 <!DOCTYPE html>
 <html>
 <head>
@@ -86,26 +88,26 @@ const emailTemplate = ({ name, email, message, service }) => `
         <div class="email-header">
             <h1>📬 New Contact Request</h1>
         </div>
-        
+
         <div class="email-body">
             <div class="detail-item">
                 <span class="detail-label">Name</span>
-                <span>${name}</span>
+                <span>${escapeHtml(name)}</span>
             </div>
-            
+
             <div class="detail-item">
                 <span class="detail-label">Email</span>
-                <span><a href="mailto:${email}">${email}</a></span>
+                <span><a href="mailto:${escapeHtml(email)}">${escapeHtml(email)}</a></span>
             </div>
-            
+
             <div class="detail-item">
                 <span class="detail-label">Message</span>
                 <div class="message-content">
-                    ${message.replace(/\n/g, '<br>')}
+                    ${escapeHtml(message).replace(/\n/g, "<br>")}
                 </div>
             </div>
         </div>
-        
+
         <div class="email-footer">
             <p>This message was sent via your portfolio contact form</p>
             <p>© ${new Date().getFullYear()} Joseph Mwangaza. All rights reserved.</p>
@@ -115,7 +117,7 @@ const emailTemplate = ({ name, email, message, service }) => `
 </html>
 `;
 
-//Auto-Reply Template
+// Auto-Reply Template
 const emailTemplateAutoReply = (name) => `
 <!DOCTYPE html>
 <html>
@@ -168,10 +170,6 @@ const emailTemplateAutoReply = (name) => `
             border-top: 1px solid #eee;
             padding-top: 20px;
         }
-        .contact-info {
-            margin-top: 15px;
-            font-size: 14px;
-        }
     </style>
 </head>
 <body>
@@ -179,27 +177,23 @@ const emailTemplateAutoReply = (name) => `
         <div class="email-header">
             <h1>Thank You for Reaching Out</h1>
         </div>
-        
+
         <div class="email-body">
             <div class="greeting">
-                Hi ${name},
+                Hi ${escapeHtml(name)},
             </div>
-            
+
             <p>Thank you for contacting me through my portfolio website. I've received your message and will review it shortly.</p>
-            
-            <p>I typically respond to inquiries within 24-48 hours. If your request requires immediate attention, please don't hesitate to call me at <a href="tel:+254792918456">+254 792 918 456</a> or send me a dm on
-             <div class="contact-info">
-                    <p>📱 <a href="https://wa.me/+254792918456">WhatsApp</a></p>
-                </div>
-            .</p>
-            
+
+            <p>I typically respond to inquiries within 24-48 hours. If your request is urgent, call me at <a href="tel:+254792918456">+254 792 918 456</a> or message me on <a href="https://wa.me/254792918456">WhatsApp</a>.</p>
+
             <div class="signature">
                 <p>Best regards,</p>
                 <p><strong>Joseph Mwangaza</strong></p>
                 <p>Software Engineer</p>
             </div>
         </div>
-        
+
         <div class="email-footer">
             <p>This is an automated response. Please do not reply to this email.</p>
             <p>© ${new Date().getFullYear()} Joseph Mwangaza. All rights reserved.</p>
@@ -209,40 +203,54 @@ const emailTemplateAutoReply = (name) => `
 </html>
 `;
 
+// Health check (useful for Render)
+app.get("/", (req, res) => res.send("OK"));
+
 app.post("/send-email", async (req, res) => {
   const { name, email, message } = req.body;
 
   if (!name || !email || !message) {
-    return res.status(400).json({ success:false,
-      error: "Missing fields" });
+    return res.status(400).json({ success: false, error: "Missing fields" });
   }
+
+  // Only set FROM_EMAIL once you have verified a domain in Resend
+  const from = process.env.FROM_EMAIL;
 
   try {
     // Notify you
-    await transporter.sendMail({
-      
-      to: process.env.EMAIL_USER,
+    const { error } = await resend.emails.send({
+      from: from ? `Portfolio <${from}>` : "Portfolio <onboarding@resend.dev>",
+      to: process.env.TO_EMAIL,
+      replyTo: email,
       subject: `New message from ${name}`,
       html: emailTemplate({ name, email, message }),
     });
 
-    // Auto reply
-    await transporter.sendMail({
-      from: `"Joseph Mwangaza" <${process.env.EMAIL_USER}>`,
-      to: email,
-      subject: "Thanks for contacting me!",
-      html: emailTemplateAutoReply(name),
-    });
+    if (error) {
+      console.error("Notify email failed:", error);
+      return res
+        .status(500)
+        .json({ success: false, error: "Email failed to send" });
+    }
 
-    res.status(200).json({ success: true,message:"Email sent successfully" });
+    // Auto-reply (only works with a verified domain)
+    if (from) {
+      const reply = await resend.emails.send({
+        from: `Joseph Mwangaza <${from}>`,
+        to: email,
+        subject: "Thanks for contacting me!",
+        html: emailTemplateAutoReply(name),
+      });
+      if (reply.error) console.error("Auto-reply failed:", reply.error);
+    }
+
+    res.status(200).json({ success: true, message: "Email sent successfully" });
   } catch (err) {
     console.error("Error sending email:", err);
-    res.status(500).json({ success:false,
-        
-        error: "Email failed to send" });
+    res.status(500).json({ success: false, error: "Email failed to send" });
   }
 });
 
 app.listen(PORT, () => {
-  console.log(`Server running on http://localhost:${PORT}`);
+  console.log(`Server running on port ${PORT}`);
 });
